@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Threading;
 using NStash.Commands;
@@ -12,13 +13,15 @@ public interface IEncryptionService
 
     public event EventHandler<FileEncryptionEventArgs>? FileDecrypting;
 
-    public ValueTask EncryptAsync(
+    public bool AfterDelete { get; set; }
+
+    public IAsyncEnumerable<Task> EncryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
         CancellationToken cancellationToken = default);
 
-    public ValueTask DecryptAsync(
+    public IAsyncEnumerable<Task> DecryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,

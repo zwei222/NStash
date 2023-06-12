@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.IO;
@@ -13,6 +14,8 @@ namespace NStash.Commands.CommandHandlers;
 
 public sealed class DefaultCommandHandler : ICommandHandler
 {
+    private static readonly int DefaultProcessCount = Environment.ProcessorCount;
+
     private readonly IConsole console;
 
     private readonly IEncryptionService encryptionService;
@@ -29,7 +32,11 @@ public sealed class DefaultCommandHandler : ICommandHandler
 
     public bool Decrypt { get; set; }
 
+    public bool Delete { get; set; }
+
     public bool DryRun { get; set; }
+
+    public int ProcessCount { get; set; }
 
     public int Invoke(InvocationContext context)
     {
@@ -64,26 +71,48 @@ public sealed class DefaultCommandHandler : ICommandHandler
                 return 1;
             }
 
+            this.encryptionService.AfterDelete = this.Delete;
             this.encryptionService.FileEncrypting += this.OnFileEncrypting;
             this.encryptionService.FileDecrypting += this.OnFileDecrypting;
+
+            var tasks = new ConcurrentBag<Task>();
+            var processCount = this.ProcessCount > 0 ? this.ProcessCount : DefaultProcessCount;
 
             foreach (var target in this.Targets)
             {
                 if (this.Encrypt)
                 {
-                    await this.encryptionService.EncryptAsync(
-                        target,
-                        password,
-                        this.DryRun,
-                        cancellationToken).ConfigureAwait(false);
+                    await foreach (var task in this.encryptionService.EncryptAsync(
+                                       target,
+                                       password,
+                                       this.DryRun,
+                                       cancellationToken).ConfigureAwait(false))
+                    {
+                        tasks.Add(task);
+
+                        if (tasks.Count >= processCount)
+                        {
+                            await Task.WhenAll(tasks).ConfigureAwait(false);
+                            tasks.Clear();
+                        }
+                    }
                 }
                 else if (this.Decrypt)
                 {
-                    await this.encryptionService.DecryptAsync(
-                        target,
-                        password,
-                        this.DryRun,
-                        cancellationToken).ConfigureAwait(false);
+                    await foreach (var task in this.encryptionService.DecryptAsync(
+                                       target,
+                                       password,
+                                       this.DryRun,
+                                       cancellationToken).ConfigureAwait(false))
+                    {
+                        tasks.Add(task);
+
+                        if (tasks.Count >= processCount)
+                        {
+                            await Task.WhenAll(tasks).ConfigureAwait(false);
+                            tasks.Clear();
+                        }
+                    }
                 }
             }
         }

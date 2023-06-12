@@ -84,12 +84,29 @@ public sealed class DefaultCommand : RootCommand
                 "-d",
             },
             description: "Decrypt the target file.");
+        var deleteOption = new Option<bool>(
+            aliases: new[]
+            {
+                "--delete",
+                "-D",
+            },
+            description: "Delete the original file after encryption/decryption.");
+        var processCountOption = new Option<int>(
+            aliases: new[]
+            {
+                "--process-count",
+                "-p",
+            },
+            description: "Specifies the number of processes to use for encryption/decryption. The default is the number of logical processors in the system.",
+            getDefaultValue: () => Environment.ProcessorCount);
         var dryRunOption = new Option<bool>(
             name: "--dry-run",
             description: "Practice the encryption/decryption process. No actual processing is performed.");
 
         this.AddOption(encryptOption);
         this.AddOption(decryptOption);
+        this.AddOption(deleteOption);
+        this.AddOption(processCountOption);
         this.AddOption(dryRunOption);
     }
 }

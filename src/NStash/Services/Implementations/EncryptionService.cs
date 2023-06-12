@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Threading.Tasks;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using NStash.Commands;
 using NStash.Events;
 
@@ -28,6 +31,8 @@ internal sealed class EncryptionService : IEncryptionService
 
     private static readonly byte[] EncryptedPrefix = new byte[32];
 
+    private static readonly Encoding DefaultEncoding = Encoding.UTF8;
+
     public EncryptionService()
     {
         var prefix = "NStashEncryptedFile"u8.ToArray();
@@ -39,61 +44,155 @@ internal sealed class EncryptionService : IEncryptionService
 
     public event EventHandler<FileEncryptionEventArgs>? FileDecrypting;
 
+    public bool AfterDelete { get; set; }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ValueTask EncryptAsync(
+    public async IAsyncEnumerable<Task> EncryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (fileSystemOptions.IsFile)
         {
-            return this.EncryptFileAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
+            yield return this.EncryptFileAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
         }
-
-        return this.EncryptDirectoryAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
+        else
+        {
+            await foreach (var task in this.EncryptDirectoryAsync(
+                               fileSystemOptions.Path,
+                               password,
+                               dryRun,
+                               cancellationToken).ConfigureAwait(false))
+            {
+                yield return task;
+            }
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ValueTask DecryptAsync(
+    public async IAsyncEnumerable<Task> DecryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (fileSystemOptions.IsFile)
         {
-            return this.DecryptFileAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
+            yield return this.DecryptFileAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
         }
-
-        return this.DecryptDirectoryAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
+        else
+        {
+            await foreach (var task in this.DecryptDirectoryAsync(
+                               fileSystemOptions.Path,
+                               password,
+                               dryRun,
+                               cancellationToken).ConfigureAwait(false))
+            {
+                yield return task;
+            }
+        }
     }
 
-    private async ValueTask EncryptDirectoryAsync(
+    private static async ValueTask WriteIntBytesAsync(
+        Stream stream,
+        Memory<byte> buffer,
+        int value,
+        CancellationToken cancellationToken)
+    {
+        BitConverter.TryWriteBytes(buffer.Span, value);
+        await stream.WriteAsync(buffer[..sizeof(int)], cancellationToken).ConfigureAwait(false);
+        buffer.Span.Clear();
+    }
+
+    private static async ValueTask WriteLongBytesAsync(
+        Stream stream,
+        Memory<byte> buffer,
+        long value,
+        CancellationToken cancellationToken)
+    {
+        BitConverter.TryWriteBytes(buffer.Span, value);
+        await stream.WriteAsync(buffer[..sizeof(long)], cancellationToken).ConfigureAwait(false);
+        buffer.Span.Clear();
+    }
+
+    private static async ValueTask<int> ReadIntBytesAsync(
+        Stream stream,
+        Memory<byte> buffer,
+        CancellationToken cancellationToken)
+    {
+        const int size = sizeof(int);
+        var offset = 0;
+
+        while (true)
+        {
+            offset += await stream.ReadAsync(buffer[offset..size], cancellationToken).ConfigureAwait(false);
+
+            if (offset >= size)
+            {
+                break;
+            }
+        }
+
+        var result = BitConverter.ToInt32(buffer[..size].Span);
+        
+        buffer.Span.Clear();
+        return result;
+    }
+
+    private static async ValueTask<long> ReadLongBytesAsync(
+        Stream stream,
+        Memory<byte> buffer,
+        CancellationToken cancellationToken)
+    {
+        const int size = sizeof(long);
+        var offset = 0;
+
+        while (true)
+        {
+            offset += await stream.ReadAsync(buffer[offset..size], cancellationToken).ConfigureAwait(false);
+
+            if (offset >= size)
+            {
+                break;
+            }
+        }
+
+        var result = BitConverter.ToInt64(buffer[..size].Span);
+
+        buffer.Span.Clear();
+        return result;
+    }
+
+    private async IAsyncEnumerable<Task> EncryptDirectoryAsync(
         string path,
         string password,
         bool dryRun,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            await this.EncryptFileAsync(file, password, dryRun, cancellationToken).ConfigureAwait(false);
+            yield return this.EncryptFileAsync(file, password, dryRun, cancellationToken);
         }
+
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    private async ValueTask DecryptDirectoryAsync(
+    private async IAsyncEnumerable<Task> DecryptDirectoryAsync(
         string path,
         string password,
         bool dryRun,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            await this.DecryptFileAsync(file, password, dryRun, cancellationToken).ConfigureAwait(false);
+            yield return this.DecryptFileAsync(file, password, dryRun, cancellationToken);
         }
+
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    private async ValueTask EncryptFileAsync(
+    private async Task EncryptFileAsync(
         string path,
         string password,
         bool dryRun,
@@ -106,12 +205,13 @@ internal sealed class EncryptionService : IEncryptionService
             FileShare.Read,
             DefaultBufferSize,
             true);
-        var filePath = $"{path}{EncryptedExtension}";
-
-        this.FileEncrypting?.Invoke(this, new FileEncryptionEventArgs(path, filePath));
 
         await using (sourceFileStream.ConfigureAwait(false))
         {
+            var filePath = $"{path}{EncryptedExtension}";
+
+            this.FileEncrypting?.Invoke(this, new FileEncryptionEventArgs(path, filePath));
+
             if (dryRun)
             {
                 return;
@@ -142,26 +242,70 @@ internal sealed class EncryptionService : IEncryptionService
                     await destinationFileStream.WriteAsync(encryptInfo.Item1, cancellationToken).ConfigureAwait(false);
                     await destinationFileStream.WriteAsync(aes.IV, cancellationToken).ConfigureAwait(false);
 
+                    var fileInfo = new FileInfo(path);
+                    var creationTime = fileInfo.CreationTimeUtc.Ticks;
+                    var lastWriteTime = fileInfo.LastWriteTimeUtc.Ticks;
+                    var lastAccessTime = fileInfo.LastAccessTimeUtc.Ticks;
+                    var attributes = (int)fileInfo.Attributes;
+                    var unixFileMode = (int)fileInfo.UnixFileMode;
+                    var fileName = fileInfo.Name;
+                    var fileNameBytes = DefaultEncoding.GetBytes(fileName);
+                    var fileNameBytesLength = fileNameBytes.Length;
+
                     using var cryptoTransform = aes.CreateEncryptor();
                     var cryptoStream = new CryptoStream(destinationFileStream, cryptoTransform, CryptoStreamMode.Write);
 
                     await using (cryptoStream.ConfigureAwait(false))
                     {
-                        await sourceFileStream.CopyToAsync(
-                            cryptoStream,
-                            DefaultBufferSize,
-                            cancellationToken).ConfigureAwait(false);
-                        /*using var memoryOwner = MemoryPool<byte>.Shared.Rent(1024);
-                        var buffer = memoryOwner.Memory;
+                        using (var memoryOwner = MemoryPool<byte>.Shared.Rent(sizeof(long)))
+                        {
+                            var fileInfoBuffer = memoryOwner.Memory;
+
+                            await WriteLongBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                creationTime,
+                                cancellationToken).ConfigureAwait(false);
+                            await WriteLongBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                lastWriteTime,
+                                cancellationToken).ConfigureAwait(false);
+                            await WriteLongBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                lastAccessTime,
+                                cancellationToken).ConfigureAwait(false);
+                            await WriteIntBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                attributes,
+                                cancellationToken).ConfigureAwait(false);
+                            await WriteIntBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                unixFileMode,
+                                cancellationToken).ConfigureAwait(false);
+                            await WriteIntBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                fileNameBytesLength,
+                                cancellationToken).ConfigureAwait(false);
+                            await cryptoStream.WriteAsync(
+                                fileNameBytes[..fileNameBytesLength],
+                                cancellationToken).ConfigureAwait(false);
+                        }
+
+                        using var destinationMemoryOwner = MemoryPool<byte>.Shared.Rent(DefaultBufferSize);
+                        var buffer = destinationMemoryOwner.Memory;
                         var length = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
     
                         while (length > 0)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
                             await cryptoStream.WriteAsync(buffer[..length], cancellationToken).ConfigureAwait(false);
-                            await cryptoStream.FlushFinalBlockAsync(cancellationToken).ConfigureAwait(false);
                             length = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-                        }*/
+                        }
                     }
                 }
             }
@@ -175,21 +319,29 @@ internal sealed class EncryptionService : IEncryptionService
                 throw;
             }
         }
+
+        if (this.AfterDelete)
+        {
+            if (File.Exists(path))
+            {
+                var fileInfo = new FileInfo(path);
+
+                if ((fileInfo.Attributes & FileAttributes.ReadOnly) is FileAttributes.ReadOnly)
+                {
+                    fileInfo.Attributes = FileAttributes.Normal;
+                }
+
+                File.Delete(path);
+            }
+        }
     }
 
-    private async ValueTask DecryptFileAsync(
+    private async Task DecryptFileAsync(
         string path,
         string password,
         bool dryRun,
         CancellationToken cancellationToken)
     {
-        var filePath = path;
-
-        if (path.EndsWith(EncryptedExtension, StringComparison.Ordinal))
-        {
-            filePath = path[..^EncryptedExtension.Length];
-        }
-
         var sourceFileStream = new FileStream(
             path,
             FileMode.Open,
@@ -197,45 +349,43 @@ internal sealed class EncryptionService : IEncryptionService
             FileShare.Read,
             DefaultBufferSize,
             true);
-        var ivSize = DefaultBlockSize / 8;
-        var prefixSize = EncryptedPrefix.Length + DefaultSaltSize + ivSize;
-        var salt = new byte[DefaultSaltSize];
-        var iv = new byte[ivSize];
-
-        using (var memoryOwner = MemoryPool<byte>.Shared.Rent(prefixSize))
-        {
-            var buffer = memoryOwner.Memory[..prefixSize];
-
-            _ = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-
-            if (buffer[..EncryptedPrefix.Length].Span.SequenceEqual(EncryptedPrefix.AsSpan()) is false)
-            {
-                throw new CryptographicException("The target file is not in NStash encrypted format.");
-            }
-
-            buffer[EncryptedPrefix.Length..(EncryptedPrefix.Length + DefaultSaltSize)].CopyTo(salt);
-            buffer[(EncryptedPrefix.Length + DefaultSaltSize)..].CopyTo(iv);
-        }
-
-        this.FileDecrypting?.Invoke(this, new FileEncryptionEventArgs(path, filePath));
 
         await using (sourceFileStream.ConfigureAwait(false))
         {
+            var ivSize = DefaultBlockSize / 8;
+            var prefixSize = EncryptedPrefix.Length + DefaultSaltSize + ivSize;
+            var salt = new byte[DefaultSaltSize];
+            var iv = new byte[ivSize];
+
+            using (var memoryOwner = MemoryPool<byte>.Shared.Rent(prefixSize))
+            {
+                var buffer = memoryOwner.Memory[..prefixSize];
+
+                _ = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+
+                if (buffer[..EncryptedPrefix.Length].Span.SequenceEqual(EncryptedPrefix.AsSpan()) is false)
+                {
+                    throw new CryptographicException("The target file is not in NStash encrypted format.");
+                }
+
+                buffer[EncryptedPrefix.Length..(EncryptedPrefix.Length + DefaultSaltSize)].CopyTo(salt);
+                buffer[(EncryptedPrefix.Length + DefaultSaltSize)..].CopyTo(iv);
+            }
+
             if (dryRun)
             {
                 return;
             }
 
-            var destinationFileStream = new FileStream(
-                filePath,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.Write,
-                DefaultBufferSize,
-                true);
+            var destinationFilePath = string.Empty;
 
-            await using (destinationFileStream.ConfigureAwait(false))
+            try
             {
+                long creationTime;
+                long lastWriteTime;
+                long lastAccessTime;
+                FileAttributes attributes;
+                UnixFileMode unixFileMode;
                 using var aes = Aes.Create();
 
                 aes.Mode = CipherMode.CBC;
@@ -246,25 +396,120 @@ internal sealed class EncryptionService : IEncryptionService
                 aes.IV = iv;
 
                 using var cryptoTransform = aes.CreateDecryptor(aes.Key, aes.IV);
-                var cryptoStream = new CryptoStream(destinationFileStream, cryptoTransform, CryptoStreamMode.Write);
+                var cryptoStream = new CryptoStream(sourceFileStream, cryptoTransform, CryptoStreamMode.Read);
 
                 await using (cryptoStream.ConfigureAwait(false))
                 {
-                    await sourceFileStream.CopyToAsync(
-                        cryptoStream,
-                        DefaultBufferSize,
-                        cancellationToken).ConfigureAwait(false);
-                    /*using var memoryOwner = MemoryPool<byte>.Shared.Rent(1024);
-                    var buffer = memoryOwner.Memory;
-                    var length = await cryptoStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    int fileNameBytesLength;
 
-                    while (length > 0)
+                    using (var memoryOwner = MemoryPool<byte>.Shared.Rent(sizeof(long)))
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        await destinationFileStream.WriteAsync(buffer[..length], cancellationToken).ConfigureAwait(false);
-                        length = await cryptoStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-                    }*/
+                        var fileInfoBuffer = memoryOwner.Memory;
+
+                        creationTime = await ReadLongBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
+                        lastWriteTime = await ReadLongBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
+                        lastAccessTime = await ReadLongBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
+                        attributes = (FileAttributes)await ReadIntBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
+                        unixFileMode = (UnixFileMode)await ReadIntBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
+                        fileNameBytesLength = await ReadIntBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    string fileName;
+
+                    using (var memoryOwner = MemoryPool<byte>.Shared.Rent(fileNameBytesLength))
+                    {
+                        var fileNameBuffer = memoryOwner.Memory;
+                        var offset = 0;
+
+                        while (true)
+                        {
+                            offset += await cryptoStream.ReadAsync(
+                                    fileNameBuffer[offset..fileNameBytesLength],
+                                    cancellationToken).ConfigureAwait(false);
+
+                            if (offset >= fileNameBytesLength)
+                            {
+                                break;
+                            }
+                        }
+
+                        fileName = DefaultEncoding.GetString(fileNameBuffer[..fileNameBytesLength].Span);
+                    }
+
+                    destinationFilePath = Path.Combine(
+                        Directory.GetParent(sourceFileStream.Name)!.FullName,
+                        fileName);
+
+                    this.FileDecrypting?.Invoke(this, new FileEncryptionEventArgs(path, destinationFilePath));
+
+                    var destinationFileStream = new FileStream(
+                        destinationFilePath,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.Write,
+                        DefaultBufferSize,
+                        true);
+
+                    await using (destinationFileStream.ConfigureAwait(false))
+                    {
+                        using var memoryOwner = MemoryPool<byte>.Shared.Rent(DefaultBufferSize);
+                        var buffer = memoryOwner.Memory;
+                        var length = await cryptoStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+    
+                        while (length > 0)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            await destinationFileStream.WriteAsync(buffer[..length], cancellationToken).ConfigureAwait(false);
+                            length = await cryptoStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                        }
+                    }
                 }
+
+                var fileInfo = new FileInfo(destinationFilePath)
+                {
+                    CreationTimeUtc = new DateTime(creationTime, DateTimeKind.Utc),
+                    LastWriteTimeUtc = new DateTime(lastWriteTime, DateTimeKind.Utc),
+                    LastAccessTimeUtc = new DateTime(lastAccessTime, DateTimeKind.Utc),
+                    Attributes = attributes,
+                };
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) is false)
+                {
+#pragma warning disable CA1416
+                    fileInfo.UnixFileMode = unixFileMode;
+#pragma warning restore CA1416
+                }
+            }
+            catch (Exception)
+            {
+                if (string.IsNullOrEmpty(destinationFilePath) is false &&
+                    File.Exists(destinationFilePath))
+                {
+                    File.Delete(destinationFilePath);
+                }
+
+                throw;
+            }
+        }
+
+        if (this.AfterDelete)
+        {
+            if (File.Exists(path))
+            {
+                var fileInfo = new FileInfo(path);
+
+                if ((fileInfo.Attributes & FileAttributes.ReadOnly) is FileAttributes.ReadOnly)
+                {
+                    fileInfo.Attributes = FileAttributes.Normal;
+                }
+
+                File.Delete(path);
             }
         }
     }

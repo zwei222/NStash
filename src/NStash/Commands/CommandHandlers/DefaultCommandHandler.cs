@@ -75,11 +75,10 @@ public sealed class DefaultCommandHandler : ICommandHandler
 
             this.encryptionService.AfterDelete = this.Delete;
             this.encryptionService.Compress = this.Compress;
-            this.encryptionService.FileEncrypting += this.OnFileEncrypting;
-            this.encryptionService.FileDecrypting += this.OnFileDecrypting;
 
             var tasks = new ConcurrentBag<Task>();
             var processCount = this.ProcessCount > 0 ? this.ProcessCount : DefaultProcessCount;
+            using var progress = new SpinnerProgress("");
 
             foreach (var target in this.Targets)
             {
@@ -89,6 +88,7 @@ public sealed class DefaultCommandHandler : ICommandHandler
                                        target,
                                        password,
                                        this.DryRun,
+                                       progress,
                                        cancellationToken).ConfigureAwait(false))
                     {
                         tasks.Add(task);
@@ -106,6 +106,7 @@ public sealed class DefaultCommandHandler : ICommandHandler
                                        target,
                                        password,
                                        this.DryRun,
+                                       progress,
                                        cancellationToken).ConfigureAwait(false))
                     {
                         tasks.Add(task);
@@ -124,23 +125,8 @@ public sealed class DefaultCommandHandler : ICommandHandler
             this.console.Error.WriteLine(exception.ToString());
             return 1;
         }
-        finally
-        {
-            this.encryptionService.FileEncrypting -= this.OnFileEncrypting;
-            this.encryptionService.FileDecrypting -= this.OnFileDecrypting;
-        }
 
         return 0;
-    }
-
-    private void OnFileEncrypting(object? sender, FileEncryptionEventArgs e)
-    {
-        this.console.WriteLine($"{e.SourceFilePath}{Environment.NewLine}-> {e.DestinationFilePath}");
-    }
-
-    private void OnFileDecrypting(object? sender, FileEncryptionEventArgs e)
-    {
-        this.console.WriteLine($"{e.SourceFilePath}{Environment.NewLine}-> {e.DestinationFilePath}");
     }
 
     private string? ReadPassword(CancellationToken cancellationToken)

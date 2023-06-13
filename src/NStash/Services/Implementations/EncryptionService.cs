@@ -49,10 +49,6 @@ internal sealed class EncryptionService : IEncryptionService
         Array.Copy(compressedPrefix, CompressedPrefix, compressedPrefix.Length);
     }
 
-    public event EventHandler<FileEncryptionEventArgs>? FileEncrypting;
-
-    public event EventHandler<FileEncryptionEventArgs>? FileDecrypting;
-
     public bool AfterDelete { get; set; }
 
     public bool Compress { get; set; }
@@ -62,11 +58,12 @@ internal sealed class EncryptionService : IEncryptionService
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (fileSystemOptions.IsFile)
         {
-            yield return this.EncryptFileAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
+            yield return this.EncryptFileAsync(fileSystemOptions.Path, password, dryRun, progress, cancellationToken);
         }
         else
         {
@@ -74,6 +71,7 @@ internal sealed class EncryptionService : IEncryptionService
                                fileSystemOptions.Path,
                                password,
                                dryRun,
+                               progress,
                                cancellationToken).ConfigureAwait(false))
             {
                 yield return task;
@@ -86,11 +84,12 @@ internal sealed class EncryptionService : IEncryptionService
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (fileSystemOptions.IsFile)
         {
-            yield return this.DecryptFileAsync(fileSystemOptions.Path, password, dryRun, cancellationToken);
+            yield return this.DecryptFileAsync(fileSystemOptions.Path, password, dryRun, progress, cancellationToken);
         }
         else
         {
@@ -98,6 +97,7 @@ internal sealed class EncryptionService : IEncryptionService
                                fileSystemOptions.Path,
                                password,
                                dryRun,
+                               progress,
                                cancellationToken).ConfigureAwait(false))
             {
                 yield return task;
@@ -181,11 +181,12 @@ internal sealed class EncryptionService : IEncryptionService
         string path,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            yield return this.EncryptFileAsync(file, password, dryRun, cancellationToken);
+            yield return this.EncryptFileAsync(file, password, dryRun, progress, cancellationToken);
         }
 
         await Task.CompletedTask.ConfigureAwait(false);
@@ -195,11 +196,12 @@ internal sealed class EncryptionService : IEncryptionService
         string path,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            yield return this.DecryptFileAsync(file, password, dryRun, cancellationToken);
+            yield return this.DecryptFileAsync(file, password, dryRun, progress, cancellationToken);
         }
 
         await Task.CompletedTask.ConfigureAwait(false);
@@ -209,6 +211,7 @@ internal sealed class EncryptionService : IEncryptionService
         string path,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         CancellationToken cancellationToken)
     {
         var sourceFileStream = new FileStream(
@@ -222,8 +225,6 @@ internal sealed class EncryptionService : IEncryptionService
         await using (sourceFileStream.ConfigureAwait(false))
         {
             var filePath = $"{path}{EncryptedExtension}";
-
-            this.FileEncrypting?.Invoke(this, new FileEncryptionEventArgs(path, filePath));
 
             if (dryRun)
             {
@@ -324,6 +325,8 @@ internal sealed class EncryptionService : IEncryptionService
 
                         using var destinationMemoryOwner = MemoryPool<byte>.Shared.Rent(DefaultBufferSize);
                         var buffer = destinationMemoryOwner.Memory;
+                        var totalLength = (double)sourceFileStream.Length;
+                        var currentLength = 0D;
                         var length = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
 
                         if (this.Compress)
@@ -337,6 +340,11 @@ internal sealed class EncryptionService : IEncryptionService
                                     cancellationToken.ThrowIfCancellationRequested();
                                     await deflateStream.WriteAsync(buffer[..length], cancellationToken)
                                         .ConfigureAwait(false);
+                                    currentLength += length;
+                                    progress?.Report(new FileEncryptionEventArgs(
+                                        sourceFileStream.Name,
+                                        destinationFileStream.Name,
+                                        Convert.ToInt32((currentLength / totalLength) * 100)));
                                     length = await sourceFileStream.ReadAsync(buffer, cancellationToken)
                                         .ConfigureAwait(false);
                                 }
@@ -349,10 +357,20 @@ internal sealed class EncryptionService : IEncryptionService
                                 cancellationToken.ThrowIfCancellationRequested();
                                 await cryptoStream.WriteAsync(buffer[..length], cancellationToken)
                                     .ConfigureAwait(false);
+                                currentLength += length;
+                                progress?.Report(new FileEncryptionEventArgs(
+                                    sourceFileStream.Name,
+                                    destinationFileStream.Name,
+                                    Convert.ToInt32((currentLength / totalLength) * 100)));
                                 length = await sourceFileStream.ReadAsync(buffer, cancellationToken)
                                     .ConfigureAwait(false);
                             }
                         }
+
+                        progress?.Report(new FileEncryptionEventArgs(
+                            sourceFileStream.Name,
+                            destinationFileStream.Name,
+                            100));
                     }
                 }
             }
@@ -387,6 +405,7 @@ internal sealed class EncryptionService : IEncryptionService
         string path,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         CancellationToken cancellationToken)
     {
         var sourceFileStream = new FileStream(
@@ -500,8 +519,6 @@ internal sealed class EncryptionService : IEncryptionService
                         Directory.GetParent(sourceFileStream.Name)!.FullName,
                         fileName);
 
-                    this.FileDecrypting?.Invoke(this, new FileEncryptionEventArgs(path, destinationFilePath));
-
                     var destinationFileStream = new FileStream(
                         destinationFilePath,
                         FileMode.Create,
@@ -521,6 +538,8 @@ internal sealed class EncryptionService : IEncryptionService
 
                             await using (deflateStream.ConfigureAwait(false))
                             {
+                                var totalLength = (double)deflateStream.Length;
+                                var currentLength = 0D;
                                 var length = await deflateStream.ReadAsync(buffer, cancellationToken)
                                     .ConfigureAwait(false);
 
@@ -529,6 +548,11 @@ internal sealed class EncryptionService : IEncryptionService
                                     cancellationToken.ThrowIfCancellationRequested();
                                     await destinationFileStream.WriteAsync(buffer[..length], cancellationToken)
                                         .ConfigureAwait(false);
+                                    currentLength += length;
+                                    progress?.Report(new FileEncryptionEventArgs(
+                                        sourceFileStream.Name,
+                                        destinationFileStream.Name,
+                                        Convert.ToInt32((currentLength / totalLength) * 100)));
                                     length = await deflateStream.ReadAsync(buffer, cancellationToken)
                                         .ConfigureAwait(false);
                                 }
@@ -536,6 +560,8 @@ internal sealed class EncryptionService : IEncryptionService
                         }
                         else
                         {
+                            var totalLength = (double)cryptoStream.Length;
+                            var currentLength = 0D;
                             var length = await cryptoStream.ReadAsync(buffer, cancellationToken)
                                 .ConfigureAwait(false);
 
@@ -544,10 +570,20 @@ internal sealed class EncryptionService : IEncryptionService
                                 cancellationToken.ThrowIfCancellationRequested();
                                 await destinationFileStream.WriteAsync(buffer[..length], cancellationToken)
                                     .ConfigureAwait(false);
+                                currentLength += length;
+                                progress?.Report(new FileEncryptionEventArgs(
+                                    sourceFileStream.Name,
+                                    destinationFileStream.Name,
+                                    Convert.ToInt32((currentLength / totalLength) * 100)));
                                 length = await cryptoStream.ReadAsync(buffer, cancellationToken)
                                     .ConfigureAwait(false);
                             }
                         }
+
+                        progress?.Report(new FileEncryptionEventArgs(
+                            sourceFileStream.Name,
+                            destinationFileStream.Name,
+                            100));
                     }
                 }
 

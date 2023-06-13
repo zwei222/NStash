@@ -9,10 +9,6 @@ namespace NStash.Services;
 
 public interface IEncryptionService
 {
-    public event EventHandler<FileEncryptionEventArgs>? FileEncrypting;
-
-    public event EventHandler<FileEncryptionEventArgs>? FileDecrypting;
-
     public bool AfterDelete { get; set; }
 
     public bool Compress { get; set; }
@@ -21,11 +17,13 @@ public interface IEncryptionService
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         CancellationToken cancellationToken = default);
 
     public IAsyncEnumerable<Task> DecryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
+        IProgress<FileEncryptionEventArgs> progress,
         CancellationToken cancellationToken = default);
 }

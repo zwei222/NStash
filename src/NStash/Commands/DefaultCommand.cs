@@ -91,6 +91,13 @@ public sealed class DefaultCommand : RootCommand
                 "-D",
             },
             description: "Delete the original file after encryption/decryption.");
+        var compressOption = new Option<bool>(
+            aliases: new[]
+            {
+                "--compress",
+                "-c",
+            },
+            description: "Compress the target file before encryption.");
         var processCountOption = new Option<int>(
             aliases: new[]
             {
@@ -106,6 +113,7 @@ public sealed class DefaultCommand : RootCommand
         this.AddOption(encryptOption);
         this.AddOption(decryptOption);
         this.AddOption(deleteOption);
+        this.AddOption(compressOption);
         this.AddOption(processCountOption);
         this.AddOption(dryRunOption);
     }

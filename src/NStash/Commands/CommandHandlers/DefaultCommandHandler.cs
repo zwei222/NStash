@@ -34,6 +34,8 @@ public sealed class DefaultCommandHandler : ICommandHandler
 
     public bool Delete { get; set; }
 
+    public bool Compress { get; set; }
+
     public bool DryRun { get; set; }
 
     public int ProcessCount { get; set; }
@@ -72,6 +74,7 @@ public sealed class DefaultCommandHandler : ICommandHandler
             }
 
             this.encryptionService.AfterDelete = this.Delete;
+            this.encryptionService.Compress = this.Compress;
             this.encryptionService.FileEncrypting += this.OnFileEncrypting;
             this.encryptionService.FileDecrypting += this.OnFileDecrypting;
 

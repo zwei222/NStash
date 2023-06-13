@@ -15,6 +15,8 @@ public interface IEncryptionService
 
     public bool AfterDelete { get; set; }
 
+    public bool Compress { get; set; }
+
     public IAsyncEnumerable<Task> EncryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,

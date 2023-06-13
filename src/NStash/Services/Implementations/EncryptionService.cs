@@ -2,6 +2,7 @@
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -17,6 +18,8 @@ internal sealed class EncryptionService : IEncryptionService
 {
     private const string EncryptedExtension = ".nstash";
 
+    private const int NStashPrefixSize = 32;
+
     private const int DefaultKeySize = 256;
 
     private const int DefaultBlockSize = 128;
@@ -27,17 +30,23 @@ internal sealed class EncryptionService : IEncryptionService
 
     private const int DefaultBufferSize = 4096;
 
+    private const CompressionLevel DefaultCompressionLevel = CompressionLevel.Optimal;
+
     private static readonly HashAlgorithmName DefaultHashAlgorithm = HashAlgorithmName.SHA256;
 
-    private static readonly byte[] EncryptedPrefix = new byte[32];
+    private static readonly byte[] EncryptedPrefix = new byte[NStashPrefixSize];
+
+    private static readonly byte[] CompressedPrefix = new byte[NStashPrefixSize];
 
     private static readonly Encoding DefaultEncoding = Encoding.UTF8;
 
     public EncryptionService()
     {
-        var prefix = "NStashEncryptedFile"u8.ToArray();
+        var encryptedPrefix = "NStashEncryptedFile"u8.ToArray();
+        var compressedPrefix = "NStashCompressedFile"u8.ToArray();
 
-        Array.Copy(prefix, EncryptedPrefix, prefix.Length);
+        Array.Copy(encryptedPrefix, EncryptedPrefix, encryptedPrefix.Length);
+        Array.Copy(compressedPrefix, CompressedPrefix, compressedPrefix.Length);
     }
 
     public event EventHandler<FileEncryptionEventArgs>? FileEncrypting;
@@ -45,6 +54,8 @@ internal sealed class EncryptionService : IEncryptionService
     public event EventHandler<FileEncryptionEventArgs>? FileDecrypting;
 
     public bool AfterDelete { get; set; }
+
+    public bool Compress { get; set; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public async IAsyncEnumerable<Task> EncryptAsync(
@@ -94,6 +105,7 @@ internal sealed class EncryptionService : IEncryptionService
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static async ValueTask WriteIntBytesAsync(
         Stream stream,
         Memory<byte> buffer,
@@ -105,6 +117,7 @@ internal sealed class EncryptionService : IEncryptionService
         buffer.Span.Clear();
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static async ValueTask WriteLongBytesAsync(
         Stream stream,
         Memory<byte> buffer,
@@ -238,7 +251,20 @@ internal sealed class EncryptionService : IEncryptionService
                     aes.BlockSize = DefaultBlockSize;
                     aes.Key = encryptInfo.Item2;
                     aes.IV = encryptInfo.Item3;
-                    await destinationFileStream.WriteAsync(EncryptedPrefix, cancellationToken).ConfigureAwait(false);
+
+                    if (this.Compress)
+                    {
+                        await destinationFileStream.WriteAsync(
+                            CompressedPrefix,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await destinationFileStream.WriteAsync(
+                            EncryptedPrefix,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+
                     await destinationFileStream.WriteAsync(encryptInfo.Item1, cancellationToken).ConfigureAwait(false);
                     await destinationFileStream.WriteAsync(aes.IV, cancellationToken).ConfigureAwait(false);
 
@@ -252,7 +278,7 @@ internal sealed class EncryptionService : IEncryptionService
                     var fileNameBytes = DefaultEncoding.GetBytes(fileName);
                     var fileNameBytesLength = fileNameBytes.Length;
 
-                    using var cryptoTransform = aes.CreateEncryptor();
+                    using var cryptoTransform = aes.CreateEncryptor(aes.Key, aes.IV);
                     var cryptoStream = new CryptoStream(destinationFileStream, cryptoTransform, CryptoStreamMode.Write);
 
                     await using (cryptoStream.ConfigureAwait(false))
@@ -299,12 +325,33 @@ internal sealed class EncryptionService : IEncryptionService
                         using var destinationMemoryOwner = MemoryPool<byte>.Shared.Rent(DefaultBufferSize);
                         var buffer = destinationMemoryOwner.Memory;
                         var length = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-    
-                        while (length > 0)
+
+                        if (this.Compress)
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            await cryptoStream.WriteAsync(buffer[..length], cancellationToken).ConfigureAwait(false);
-                            length = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                            var deflateStream = new DeflateStream(cryptoStream, DefaultCompressionLevel);
+
+                            await using (deflateStream.ConfigureAwait(false))
+                            {
+                                while (length > 0)
+                                {
+                                    cancellationToken.ThrowIfCancellationRequested();
+                                    await deflateStream.WriteAsync(buffer[..length], cancellationToken)
+                                        .ConfigureAwait(false);
+                                    length = await sourceFileStream.ReadAsync(buffer, cancellationToken)
+                                        .ConfigureAwait(false);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            while (length > 0)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                await cryptoStream.WriteAsync(buffer[..length], cancellationToken)
+                                    .ConfigureAwait(false);
+                                length = await sourceFileStream.ReadAsync(buffer, cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
                         }
                     }
                 }
@@ -353,9 +400,10 @@ internal sealed class EncryptionService : IEncryptionService
         await using (sourceFileStream.ConfigureAwait(false))
         {
             var ivSize = DefaultBlockSize / 8;
-            var prefixSize = EncryptedPrefix.Length + DefaultSaltSize + ivSize;
+            var prefixSize = NStashPrefixSize + DefaultSaltSize + ivSize;
             var salt = new byte[DefaultSaltSize];
             var iv = new byte[ivSize];
+            var compress = false;
 
             using (var memoryOwner = MemoryPool<byte>.Shared.Rent(prefixSize))
             {
@@ -363,13 +411,19 @@ internal sealed class EncryptionService : IEncryptionService
 
                 _ = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
 
-                if (buffer[..EncryptedPrefix.Length].Span.SequenceEqual(EncryptedPrefix.AsSpan()) is false)
+                var nStashPrefix = buffer[..NStashPrefixSize];
+
+                if (nStashPrefix.Span.SequenceEqual(CompressedPrefix.AsSpan()))
+                {
+                    compress = true;
+                }
+                else if (nStashPrefix.Span.SequenceEqual(EncryptedPrefix.AsSpan()) is false)
                 {
                     throw new CryptographicException("The target file is not in NStash encrypted format.");
                 }
 
-                buffer[EncryptedPrefix.Length..(EncryptedPrefix.Length + DefaultSaltSize)].CopyTo(salt);
-                buffer[(EncryptedPrefix.Length + DefaultSaltSize)..].CopyTo(iv);
+                buffer[NStashPrefixSize..(NStashPrefixSize + DefaultSaltSize)].CopyTo(salt);
+                buffer[(NStashPrefixSize + DefaultSaltSize)..].CopyTo(iv);
             }
 
             if (dryRun)
@@ -460,13 +514,39 @@ internal sealed class EncryptionService : IEncryptionService
                     {
                         using var memoryOwner = MemoryPool<byte>.Shared.Rent(DefaultBufferSize);
                         var buffer = memoryOwner.Memory;
-                        var length = await cryptoStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-    
-                        while (length > 0)
+
+                        if (compress)
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            await destinationFileStream.WriteAsync(buffer[..length], cancellationToken).ConfigureAwait(false);
-                            length = await cryptoStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                            var deflateStream = new DeflateStream(cryptoStream, CompressionMode.Decompress);
+
+                            await using (deflateStream.ConfigureAwait(false))
+                            {
+                                var length = await deflateStream.ReadAsync(buffer, cancellationToken)
+                                    .ConfigureAwait(false);
+
+                                while (length > 0)
+                                {
+                                    cancellationToken.ThrowIfCancellationRequested();
+                                    await destinationFileStream.WriteAsync(buffer[..length], cancellationToken)
+                                        .ConfigureAwait(false);
+                                    length = await deflateStream.ReadAsync(buffer, cancellationToken)
+                                        .ConfigureAwait(false);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var length = await cryptoStream.ReadAsync(buffer, cancellationToken)
+                                .ConfigureAwait(false);
+
+                            while (length > 0)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                await destinationFileStream.WriteAsync(buffer[..length], cancellationToken)
+                                    .ConfigureAwait(false);
+                                length = await cryptoStream.ReadAsync(buffer, cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
                         }
                     }
                 }

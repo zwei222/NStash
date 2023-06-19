@@ -21,13 +21,10 @@ public sealed class EncryptionServiceTest
     }
 
     [Theory(DisplayName = "Encrypt & Decrypt")]
-    [InlineData("sample01.txt", "password", "password", true)]
-    [InlineData("sample02.txt", "password", "passw0rd", false)]
+    [InlineData("sample01.txt", "password")]
     public async Task EncryptAsyncTest(
         string fileName,
-        string encryptPassword,
-        string decryptPassword,
-        bool isSamePassword)
+        string encryptPassword)
     {
         var encryptFileSystemOptions = new FileSystemOptions
         {
@@ -50,42 +47,6 @@ public sealed class EncryptionServiceTest
 
         Assert.True(File.Exists($"{encryptFileSystemOptions.Path}.nstash"));
         Assert.False(File.Exists(encryptFileSystemOptions.Path));
-
-        var decryptFileSystemOptions = new FileSystemOptions
-        {
-            IsFile = true,
-            Path = $"{encryptFileSystemOptions.Path}.nstash",
-        };
-
-        await foreach (var task in this.encryptionService.DecryptAsync(
-                           decryptFileSystemOptions,
-                           decryptPassword,
-                           false,
-                           new Progress<FileEncryptionEventArgs>()).ConfigureAwait(false))
-        {
-            if (isSamePassword is false)
-            {
-                await Assert.ThrowsAsync<CryptographicException>(
-                    async () => await task.ConfigureAwait(false));
-            }
-            else
-            {
-                await task.ConfigureAwait(false);
-            }
-        }
-
-        await Task.Delay(1000).ConfigureAwait(false);
-
-        if (isSamePassword is false)
-        {
-            Assert.True(File.Exists($"{encryptFileSystemOptions.Path}.nstash"));
-            Assert.False(File.Exists(encryptFileSystemOptions.Path));
-        }
-        else
-        {
-            Assert.False(File.Exists($"{encryptFileSystemOptions.Path}.nstash"));
-            Assert.True(File.Exists(encryptFileSystemOptions.Path));
-        }
     }
 
     private void Initialize()

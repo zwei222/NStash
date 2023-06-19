@@ -40,13 +40,13 @@ jobs:
 
     - name: Publish for Windows
       run: |
-        dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --output ./artifacts/win-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --no-restore --verbosity diagnostic
+        dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --output ./artifacts/win-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --verbosity diagnostic
 
     - name: Publish for macOS
-      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime osx-x64 --output ./artifacts/osx-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --no-restore --verbosity diagnostic
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime osx-x64 --output ./artifacts/osx-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --verbosity diagnostic
 
     - name: Publish for Linux
-      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime linux-x64 --output ./artifacts/linux-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --no-restore --verbosity diagnostic
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime linux-x64 --output ./artifacts/linux-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --verbosity diagnostic
 
     - name: Archive
       run: |

@@ -6,6 +6,8 @@ on:
     - "release/*"
 
 env:
+  BASE_NAME: NStash
+  EXE_NAME: nstash
   PROJECT_PATH: src/NStash/NStash.csproj
   CONFIGURATION: Release
   DOTNET_VERSION: 7.*
@@ -36,23 +38,23 @@ jobs:
       run: dotnet restore
 
     - name: Build
-      run: dotnet build --configuration ${{ env.CONFIGURATION }} --no-restore
+      run: dotnet build --configuration ${{ env.CONFIGURATION }} --no-restore /p:Version=${{ steps.environments.outputs.version }}
 
     - name: Publish for Windows
       run: |
-        dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --output ./artifacts/win-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --verbosity diagnostic
+        dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --output ./artifacts/win-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true /p:Version=${{ steps.environments.outputs.version }} --self-contained true --verbosity diagnostic
 
     - name: Publish for macOS
-      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime osx-x64 --output ./artifacts/osx-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --verbosity diagnostic
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime osx-x64 --output ./artifacts/osx-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true /p:Version=${{ steps.environments.outputs.version }} --self-contained true --verbosity diagnostic
 
     - name: Publish for Linux
-      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime linux-x64 --output ./artifacts/linux-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --verbosity diagnostic
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime linux-x64 --output ./artifacts/linux-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true /p:Version=${{ steps.environments.outputs.version }} --self-contained true --verbosity diagnostic
 
     - name: Archive
       run: |
-        zip -r NStash-win-x64.zip ./artifacts/win-x64/nstash.exe
-        zip -r NStash-osx-x64.zip ./artifacts/osx-x64/nstash
-        zip -r NStash-linux-x64.zip ./artifacts/linux-x64/nstash
+        zip -r ${{ env.BASE_NAME }}-win-x64.zip ./artifacts/win-x64/${{ env.EXE_NAME }}.exe
+        zip -r ${{ env.BASE_NAME }}-osx-x64.zip ./artifacts/osx-x64/${{ env.EXE_NAME }}
+        zip -r ${{ env.BASE_NAME }}-linux-x64.zip ./artifacts/linux-x64/${{ env.EXE_NAME }}
 
     - name: Release
       uses: softprops/action-gh-release@v1
@@ -60,6 +62,6 @@ jobs:
         name: Ver.${{ steps.environments.outputs.version }}
         tag_name: v${{ steps.environments.outputs.version }}
         files: |
-          NStash-win-x64.zip
-          NStash-osx-x64.zip
-          NStash-linux-x64.zip
+          ${{ env.BASE_NAME }}-win-x64.zip
+          ${{ env.BASE_NAME }}-osx-x64.zip
+          ${{ env.BASE_NAME }}-linux-x64.zip

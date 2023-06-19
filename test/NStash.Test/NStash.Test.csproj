@@ -25,4 +25,13 @@
     <ProjectReference Include="..\..\src\NStash\NStash.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Resources\sample02.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Resources\sample01.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

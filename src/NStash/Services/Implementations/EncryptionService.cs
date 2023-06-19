@@ -14,7 +14,7 @@ using NStash.Events;
 
 namespace NStash.Services.Implementations;
 
-internal sealed class EncryptionService : IEncryptionService
+public sealed class EncryptionService : IEncryptionService
 {
     private const string EncryptedExtension = ".nstash";
 
@@ -560,7 +560,7 @@ internal sealed class EncryptionService : IEncryptionService
                         }
                         else
                         {
-                            var totalLength = (double)cryptoStream.Length;
+                            var totalLength = (double)sourceFileStream.Length;
                             var currentLength = 0D;
                             var length = await cryptoStream.ReadAsync(buffer, cancellationToken)
                                 .ConfigureAwait(false);

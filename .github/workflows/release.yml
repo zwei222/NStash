@@ -1,0 +1,55 @@
+name: build
+
+on:
+  push:
+    tags:
+    - "[0-9].[0-9].[0-9]+"
+
+env:
+  PROJECT_PATH: src/NStash/NStash.csproj
+  CONFIGURATION: Release
+  DOTNET_VERSION: 7.*
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Install dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration  --no-restore
+
+    - name: Publish for Windows
+      run: |
+        dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --output ./artifacts/win-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --no-restore --verbosity diagnostic
+
+    - name: Publish for macOS
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime osx-x64 --output ./artifacts/osx-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --no-restore --verbosity diagnostic
+
+    - name: Publish for Linux
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime linux-x64 --output ./artifacts/linux-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true --self-contained true --no-restore --verbosity diagnostic
+
+    - name: Archive
+      run: |
+        zip -r NStash-win-x64.zip ./artifacts/win-x64/nstash.exe
+        zip -r NStash-osx-x64.zip ./artifacts/osx-x64/nstash
+        zip -r NStash-linux-x64.zip ./artifacts/linux-x64/nstash
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Ver.${{ github.ref }}
+        files: |
+          NStash-win-x64.zip
+          NStash-osx-x64.zip
+          NStash-linux-x64.zip

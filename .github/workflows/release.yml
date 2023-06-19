@@ -1,9 +1,9 @@
-name: build
+name: release
 
 on:
   push:
-    tags:
-    - "[0-9].[0-9].[0-9]+"
+    branches:
+    - "release/*"
 
 env:
   PROJECT_PATH: src/NStash/NStash.csproj
@@ -11,10 +11,19 @@ env:
   DOTNET_VERSION: 7.*
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Set version
+      id: environments
+      run: |
+        branch_name=${{ github.ref_name }}
+        split=(${branch_name//// })
+        version=${split[1]}
+        echo "Version: $version"
+        echo '::set-output name=version::${version}'
+
     - name: Checkout
       uses: actions/checkout@v3
 
@@ -48,7 +57,8 @@ jobs:
     - name: Release
       uses: softprops/action-gh-release@v1
       with:
-        name: Ver.${{ github.ref }}
+        name: Ver.${{ steps.environments.outputs.version }}
+        tag_name: v${{ steps.environments.outputs.version }}
         files: |
           NStash-win-x64.zip
           NStash-osx-x64.zip

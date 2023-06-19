@@ -22,7 +22,7 @@ jobs:
         split=(${branch_name//// })
         version=${split[1]}
         echo "Version: $version"
-        echo '::set-output name=version::${version}'
+        echo "version=${version}" >> $GITHUB_OUTPUT
 
     - name: Checkout
       uses: actions/checkout@v3
@@ -36,7 +36,7 @@ jobs:
       run: dotnet restore
 
     - name: Build
-      run: dotnet build --configuration  --no-restore
+      run: dotnet build --configuration ${{ env.CONFIGURATION }} --no-restore
 
     - name: Publish for Windows
       run: |

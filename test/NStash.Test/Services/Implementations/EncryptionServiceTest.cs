@@ -1,7 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Threading.Tasks;
-using NStash.Commands;
+﻿using NStash.Commands;
 using NStash.Events;
 using NStash.Services;
 using NStash.Services.Implementations;
@@ -20,7 +17,11 @@ public sealed class EncryptionServiceTest
     }
 
     [Theory(DisplayName = "Encrypt & Decrypt")]
-    [InlineData("sample01.txt", "password")]
+    [InlineData("sample01.txt", "password1")]
+    [InlineData("sample02.txt", "password2")]
+    [InlineData("1KB.bin", "password1KB")]
+    [InlineData("100KB.bin", "password100KB")]
+    [InlineData("100MB.bin", "password100MB")]
     public async Task EncryptAsyncTest(
         string fileName,
         string encryptPassword)
@@ -30,6 +31,7 @@ public sealed class EncryptionServiceTest
             IsFile = true,
             Path = Path.Combine(AppContext.BaseDirectory, "Resources", fileName),
         };
+        var expected = await File.ReadAllBytesAsync(encryptFileSystemOptions.Path);
 
         this.encryptionService.AfterDelete = true;
 
@@ -37,15 +39,39 @@ public sealed class EncryptionServiceTest
                            encryptFileSystemOptions,
                            encryptPassword,
                            false,
-                           new Progress<FileEncryptionEventArgs>()).ConfigureAwait(false))
+                           new Progress<FileEncryptionEventArgs>()))
         {
-            await task.ConfigureAwait(false);
+            await task;
         }
 
-        await Task.Delay(1000).ConfigureAwait(false);
+        await Task.Delay(1000);
 
         Assert.True(File.Exists($"{encryptFileSystemOptions.Path}.nstash"));
         Assert.False(File.Exists(encryptFileSystemOptions.Path));
+
+        var decryptFileSystemOptions = new FileSystemOptions
+        {
+            IsFile = true,
+            Path = $"{encryptFileSystemOptions.Path}.nstash",
+        };
+
+        await foreach (var task in this.encryptionService.DecryptAsync(
+                           decryptFileSystemOptions,
+                           encryptPassword,
+                           false,
+                           new Progress<FileEncryptionEventArgs>()))
+        {
+            await task;
+        }
+
+        await Task.Delay(1000);
+
+        Assert.True(File.Exists(encryptFileSystemOptions.Path));
+        Assert.False(File.Exists($"{encryptFileSystemOptions.Path}.nstash"));
+
+        var actual = await File.ReadAllBytesAsync(encryptFileSystemOptions.Path);
+
+        Assert.Equal(expected, actual);
     }
 
     private void Initialize()

@@ -1,0 +1,22 @@
+﻿<Project>
+  <Import Project="..\Directory.Build.props" />
+
+  <PropertyGroup>
+    <AnalysisMode>Default</AnalysisMode>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/zwei222/NStash.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/zwei222/NStash</PackageProjectUrl>
+    <Authors>zwei_222</Authors>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)\..\LICENSE" Pack="true" PackagePath="\"/>
+    <None Include="$(MSBuildThisFileDirectory)\..\README.md" Pack="true" PackagePath="\"/>
+  </ItemGroup>
+
+</Project>

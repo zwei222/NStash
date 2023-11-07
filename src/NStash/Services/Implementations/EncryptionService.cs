@@ -1,14 +1,9 @@
-﻿using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.IO;
+﻿using System.Buffers;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using NStash.Commands;
 using NStash.Events;
 
@@ -26,9 +21,9 @@ public sealed class EncryptionService : IEncryptionService
 
     private const int DefaultSaltSize = 8;
 
-    private const int DefaultIterations = 1000;
+    private const int DefaultIterations = 310_000;
 
-    private const int DefaultBufferSize = 4096;
+    private const int DefaultBufferSize = 4_096;
 
     private const CompressionLevel DefaultCompressionLevel = CompressionLevel.Optimal;
 
@@ -642,10 +637,13 @@ public sealed class EncryptionService : IEncryptionService
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private byte[] GenerateKey(string password, byte[] salt)
+    private byte[] GenerateKey(ReadOnlySpan<char> password, ReadOnlySpan<byte> salt)
     {
-        using var derivedBytes = new Rfc2898DeriveBytes(password, salt, DefaultIterations, DefaultHashAlgorithm);
-
-        return derivedBytes.GetBytes(DefaultKeySize / 8);
+        return Rfc2898DeriveBytes.Pbkdf2(
+            password,
+            salt,
+            DefaultIterations,
+            DefaultHashAlgorithm,
+            DefaultKeySize / 8);
     }
 }

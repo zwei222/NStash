@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using System.Threading;
-using NStash.Commands;
+﻿using NStash.Commands;
 using NStash.Events;
 
 namespace NStash.Services;
@@ -13,14 +9,14 @@ public interface IEncryptionService
 
     public bool Compress { get; set; }
 
-    public IAsyncEnumerable<Task> EncryptAsync(
+    public IAsyncEnumerable<ValueTask> EncryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
         IProgress<FileEncryptionEventArgs> progress,
         CancellationToken cancellationToken = default);
 
-    public IAsyncEnumerable<Task> DecryptAsync(
+    public IAsyncEnumerable<ValueTask> DecryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,

@@ -1,14 +1,11 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.IO;
-using System.Linq;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using NStash.Events;
 using NStash.Services;
+using ValueTaskSupplement;
 
 namespace NStash.Commands.CommandHandlers;
 
@@ -76,7 +73,7 @@ public sealed class DefaultCommandHandler : ICommandHandler
             this.encryptionService.AfterDelete = this.Delete;
             this.encryptionService.Compress = this.Compress;
 
-            var tasks = new ConcurrentBag<Task>();
+            var tasks = new ConcurrentBag<ValueTask>();
             var processCount = this.ProcessCount > 0 ? this.ProcessCount : DefaultProcessCount;
             using var progress = new SpinnerProgress("");
 
@@ -95,7 +92,7 @@ public sealed class DefaultCommandHandler : ICommandHandler
 
                         if (tasks.Count >= processCount)
                         {
-                            await Task.WhenAll(tasks).ConfigureAwait(false);
+                            await ValueTaskEx.WhenAll(tasks).ConfigureAwait(false);
                             tasks.Clear();
                         }
                     }
@@ -113,11 +110,16 @@ public sealed class DefaultCommandHandler : ICommandHandler
 
                         if (tasks.Count >= processCount)
                         {
-                            await Task.WhenAll(tasks).ConfigureAwait(false);
+                            await ValueTaskEx.WhenAll(tasks).ConfigureAwait(false);
                             tasks.Clear();
                         }
                     }
                 }
+            }
+
+            if (tasks.IsEmpty is false)
+            {
+                await ValueTaskEx.WhenAll(tasks).ConfigureAwait(false);
             }
         }
         catch (Exception exception)

@@ -49,7 +49,7 @@ public sealed class EncryptionService : IEncryptionService
     public bool Compress { get; set; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async IAsyncEnumerable<Task> EncryptAsync(
+    public async IAsyncEnumerable<ValueTask> EncryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
@@ -75,7 +75,7 @@ public sealed class EncryptionService : IEncryptionService
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async IAsyncEnumerable<Task> DecryptAsync(
+    public async IAsyncEnumerable<ValueTask> DecryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
@@ -172,7 +172,7 @@ public sealed class EncryptionService : IEncryptionService
         return result;
     }
 
-    private async IAsyncEnumerable<Task> EncryptDirectoryAsync(
+    private async IAsyncEnumerable<ValueTask> EncryptDirectoryAsync(
         string path,
         string password,
         bool dryRun,
@@ -184,10 +184,10 @@ public sealed class EncryptionService : IEncryptionService
             yield return this.EncryptFileAsync(file, password, dryRun, progress, cancellationToken);
         }
 
-        await Task.CompletedTask.ConfigureAwait(false);
+        await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 
-    private async IAsyncEnumerable<Task> DecryptDirectoryAsync(
+    private async IAsyncEnumerable<ValueTask> DecryptDirectoryAsync(
         string path,
         string password,
         bool dryRun,
@@ -199,10 +199,10 @@ public sealed class EncryptionService : IEncryptionService
             yield return this.DecryptFileAsync(file, password, dryRun, progress, cancellationToken);
         }
 
-        await Task.CompletedTask.ConfigureAwait(false);
+        await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 
-    private async Task EncryptFileAsync(
+    private async ValueTask EncryptFileAsync(
         string path,
         string password,
         bool dryRun,
@@ -396,7 +396,7 @@ public sealed class EncryptionService : IEncryptionService
         }
     }
 
-    private async Task DecryptFileAsync(
+    private async ValueTask DecryptFileAsync(
         string path,
         string password,
         bool dryRun,

@@ -22,6 +22,7 @@ public sealed class EncryptionServiceTest
     [InlineData("1KB.bin", "password1KB")]
     [InlineData("100KB.bin", "password100KB")]
     [InlineData("100MB.bin", "password100MB")]
+    [InlineData("186245.bin", "passw0rd")]
     public async Task EncryptAsyncTest(
         string fileName,
         string encryptPassword)

@@ -10,6 +10,7 @@
     <PackageReference Include="Kurukuru" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="System.CommandLine.Hosting" />
+    <PackageReference Include="ValueTaskSupplement" />
   </ItemGroup>
 
 </Project>

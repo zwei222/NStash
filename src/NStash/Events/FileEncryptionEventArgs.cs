@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace NStash.Events;
+﻿namespace NStash.Events;
 
 public sealed class FileEncryptionEventArgs : EventArgs
 {

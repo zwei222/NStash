@@ -265,6 +265,7 @@ public sealed class EncryptionService : IEncryptionService
                     await destinationFileStream.WriteAsync(aes.IV, cancellationToken).ConfigureAwait(false);
 
                     var fileInfo = new FileInfo(path);
+                    var fileSize = fileInfo.Length;
                     var creationTime = fileInfo.CreationTimeUtc.Ticks;
                     var lastWriteTime = fileInfo.LastWriteTimeUtc.Ticks;
                     var lastAccessTime = fileInfo.LastAccessTimeUtc.Ticks;
@@ -283,6 +284,11 @@ public sealed class EncryptionService : IEncryptionService
                         {
                             var fileInfoBuffer = memoryOwner.Memory;
 
+                            await WriteLongBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                fileSize,
+                                cancellationToken).ConfigureAwait(false);
                             await WriteLongBytesAsync(
                                 cryptoStream,
                                 fileInfoBuffer,
@@ -468,12 +474,15 @@ public sealed class EncryptionService : IEncryptionService
 
                 await using (cryptoStream.ConfigureAwait(false))
                 {
+                    long fileSize;
                     int fileNameBytesLength;
 
                     using (var memoryOwner = MemoryPool<byte>.Shared.Rent(sizeof(long)))
                     {
                         var fileInfoBuffer = memoryOwner.Memory;
 
+                        fileSize = await ReadLongBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
                         creationTime = await ReadLongBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
                             .ConfigureAwait(false);
                         lastWriteTime = await ReadLongBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
@@ -533,7 +542,6 @@ public sealed class EncryptionService : IEncryptionService
 
                             await using (deflateStream.ConfigureAwait(false))
                             {
-                                var totalLength = (double)deflateStream.Length;
                                 var currentLength = 0D;
                                 var length = await deflateStream.ReadAsync(buffer, cancellationToken)
                                     .ConfigureAwait(false);
@@ -547,7 +555,7 @@ public sealed class EncryptionService : IEncryptionService
                                     progress?.Report(new FileEncryptionEventArgs(
                                         sourceFileStream.Name,
                                         destinationFileStream.Name,
-                                        Convert.ToInt32((currentLength / totalLength) * 100)));
+                                        Convert.ToInt32((currentLength / fileSize) * 100)));
                                     length = await deflateStream.ReadAsync(buffer, cancellationToken)
                                         .ConfigureAwait(false);
                                 }
@@ -555,7 +563,6 @@ public sealed class EncryptionService : IEncryptionService
                         }
                         else
                         {
-                            var totalLength = (double)sourceFileStream.Length;
                             var currentLength = 0D;
                             var length = await cryptoStream.ReadAsync(buffer, cancellationToken)
                                 .ConfigureAwait(false);
@@ -569,7 +576,7 @@ public sealed class EncryptionService : IEncryptionService
                                 progress?.Report(new FileEncryptionEventArgs(
                                     sourceFileStream.Name,
                                     destinationFileStream.Name,
-                                    Convert.ToInt32((currentLength / totalLength) * 100)));
+                                    Convert.ToInt32((currentLength / fileSize) * 100)));
                                 length = await cryptoStream.ReadAsync(buffer, cancellationToken)
                                     .ConfigureAwait(false);
                             }

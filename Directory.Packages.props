@@ -10,6 +10,6 @@
     <PackageVersion Include="ValueTaskSupplement" Version="1.1.0" />
     <PackageVersion Include="xunit" Version="2.7.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.5.7" />
-    <PackageVersion Include="coverlet.collector" Version="6.0.0" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.1" />
   </ItemGroup>
 </Project>

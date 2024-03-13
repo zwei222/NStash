@@ -1,18 +1,12 @@
-﻿using NStash.Commands;
-using NStash.Events;
-using NStash.Services;
-using NStash.Services.Implementations;
+﻿using NStash.Core.Events;
 using Xunit;
 
-namespace NStash.Test.Services.Implementations;
+namespace NStash.Core.Test;
 
-public sealed class EncryptionServiceTest
+public sealed class EncryptorTest
 {
-    private readonly IEncryptionService encryptionService;
-
-    public EncryptionServiceTest()
+    public EncryptorTest()
     {
-        this.encryptionService = new EncryptionService();
         this.Initialize();
     }
 
@@ -34,13 +28,12 @@ public sealed class EncryptionServiceTest
         };
         var expected = await File.ReadAllBytesAsync(encryptFileSystemOptions.Path);
 
-        this.encryptionService.AfterDelete = true;
-        this.encryptionService.Compress = false;
-
-        await foreach (var task in this.encryptionService.EncryptAsync(
+        await foreach (var task in Encryptor.EncryptAsync(
                            encryptFileSystemOptions,
                            encryptPassword,
                            false,
+                           false,
+                           true,
                            new Progress<FileEncryptionEventArgs>()))
         {
             await task;
@@ -57,10 +50,11 @@ public sealed class EncryptionServiceTest
             Path = $"{encryptFileSystemOptions.Path}.nstash",
         };
 
-        await foreach (var task in this.encryptionService.DecryptAsync(
+        await foreach (var task in Encryptor.DecryptAsync(
                            decryptFileSystemOptions,
                            encryptPassword,
                            false,
+                           true,
                            new Progress<FileEncryptionEventArgs>()))
         {
             await task;
@@ -94,13 +88,12 @@ public sealed class EncryptionServiceTest
         };
         var expected = await File.ReadAllBytesAsync(encryptFileSystemOptions.Path);
 
-        this.encryptionService.AfterDelete = true;
-        this.encryptionService.Compress = true;
-
-        await foreach (var task in this.encryptionService.EncryptAsync(
+        await foreach (var task in Encryptor.EncryptAsync(
                            encryptFileSystemOptions,
                            encryptPassword,
                            false,
+                           true,
+                           true,
                            new Progress<FileEncryptionEventArgs>()))
         {
             await task;
@@ -117,10 +110,11 @@ public sealed class EncryptionServiceTest
             Path = $"{encryptFileSystemOptions.Path}.nstash",
         };
 
-        await foreach (var task in this.encryptionService.DecryptAsync(
+        await foreach (var task in Encryptor.DecryptAsync(
                            decryptFileSystemOptions,
                            encryptPassword,
                            false,
+                           true,
                            new Progress<FileEncryptionEventArgs>()))
         {
             await task;

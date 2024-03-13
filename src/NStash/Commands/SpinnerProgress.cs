@@ -1,7 +1,8 @@
-﻿using System.Collections.Concurrent;
-using Kurukuru;
+﻿using Kurukuru;
+using NStash.Core.Events;
+using System.Collections.Concurrent;
 
-namespace NStash.Events;
+namespace NStash.Commands;
 
 public sealed class SpinnerProgress : IProgress<FileEncryptionEventArgs>, IDisposable
 {

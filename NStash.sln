@@ -5,11 +5,13 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{39A60B5B-C184-4130-BC63-069CD7E3A1B6}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NStash", "src\NStash\NStash.csproj", "{2439CF94-4B59-4627-B1D6-94142AEF0E6C}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{2F8F9572-4D42-4066-9D8F-B690E5397759}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NStash.Test", "test\NStash.Test\NStash.Test.csproj", "{6317DFE7-248C-4D45-AD9F-69965ECED207}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NStash.Core", "src\NStash.Core\NStash.Core.csproj", "{A9897DFA-18D8-43D1-96CD-38D032AA3B16}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NStash", "src\NStash\NStash.csproj", "{8DC61C9D-8445-4BF5-9346-33F222DE3F29}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NStash.Core.Test", "test\NStash.Core.Test\NStash.Core.Test.csproj", "{AB240054-01C5-4C81-97DB-E5B0386AFE4A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -17,21 +19,26 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{2439CF94-4B59-4627-B1D6-94142AEF0E6C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2439CF94-4B59-4627-B1D6-94142AEF0E6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2439CF94-4B59-4627-B1D6-94142AEF0E6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2439CF94-4B59-4627-B1D6-94142AEF0E6C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6317DFE7-248C-4D45-AD9F-69965ECED207}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6317DFE7-248C-4D45-AD9F-69965ECED207}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6317DFE7-248C-4D45-AD9F-69965ECED207}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6317DFE7-248C-4D45-AD9F-69965ECED207}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A9897DFA-18D8-43D1-96CD-38D032AA3B16}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9897DFA-18D8-43D1-96CD-38D032AA3B16}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9897DFA-18D8-43D1-96CD-38D032AA3B16}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9897DFA-18D8-43D1-96CD-38D032AA3B16}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8DC61C9D-8445-4BF5-9346-33F222DE3F29}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8DC61C9D-8445-4BF5-9346-33F222DE3F29}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8DC61C9D-8445-4BF5-9346-33F222DE3F29}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8DC61C9D-8445-4BF5-9346-33F222DE3F29}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB240054-01C5-4C81-97DB-E5B0386AFE4A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB240054-01C5-4C81-97DB-E5B0386AFE4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB240054-01C5-4C81-97DB-E5B0386AFE4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB240054-01C5-4C81-97DB-E5B0386AFE4A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{2439CF94-4B59-4627-B1D6-94142AEF0E6C} = {39A60B5B-C184-4130-BC63-069CD7E3A1B6}
-		{6317DFE7-248C-4D45-AD9F-69965ECED207} = {2F8F9572-4D42-4066-9D8F-B690E5397759}
+		{A9897DFA-18D8-43D1-96CD-38D032AA3B16} = {39A60B5B-C184-4130-BC63-069CD7E3A1B6}
+		{8DC61C9D-8445-4BF5-9346-33F222DE3F29} = {39A60B5B-C184-4130-BC63-069CD7E3A1B6}
+		{AB240054-01C5-4C81-97DB-E5B0386AFE4A} = {2F8F9572-4D42-4066-9D8F-B690E5397759}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {362358B1-8154-40FC-9F75-FBB81D1EB637}

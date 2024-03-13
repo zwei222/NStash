@@ -13,9 +13,10 @@ env:
   DOTNET_VERSION: 8
 
 jobs:
-  release:
+  initialize:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.environments.outputs.version }}
     steps:
     - name: Set version
       id: environments
@@ -26,6 +27,27 @@ jobs:
         echo "Version: $version"
         echo "version=${version}" >> $GITHUB_OUTPUT
 
+  release:
+    strategy:
+      matrix:
+        platform: [windows-latest, macos-13, macos-14, ubuntu-latest]
+        include:
+          - platform: windows-latest
+            runtime: win-x64
+            extension: ".exe"
+          - platform: macos-13
+            runtime: osx-x64
+            extension: ""
+          - platform: macos-14
+            runtime: osx-arm64
+            extension: ""
+          - platform: ubuntu-latest
+            runtime: linux-x64
+            extension: ""
+
+    runs-on: ${{ matrix.platform }}
+    needs: initialize
+    steps:
     - name: Checkout
       uses: actions/checkout@v3
 
@@ -38,30 +60,26 @@ jobs:
       run: dotnet restore
 
     - name: Build
-      run: dotnet build --configuration ${{ env.CONFIGURATION }} --no-restore /p:Version=${{ steps.environments.outputs.version }}
+      run: dotnet build --configuration ${{ env.CONFIGURATION }} --no-restore /p:Version=${{ needs.initialize.outputs.version }}
 
-    - name: Publish for Windows
+    - name: Publish
       run: |
-        dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime win-x64 --output ./artifacts/win-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true /p:Version=${{ steps.environments.outputs.version }} --self-contained true --verbosity diagnostic
+        dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime ${{ matrix.runtime }} --output ./artifacts/ /p:Version=${{ needs.initialize.outputs.version }}
 
-    - name: Publish for macOS
-      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime osx-x64 --output ./artifacts/osx-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true /p:Version=${{ steps.environments.outputs.version }} --self-contained true --verbosity diagnostic
-
-    - name: Publish for Linux
-      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration ${{ env.CONFIGURATION }} --runtime linux-x64 --output ./artifacts/linux-x64/ -p:PublishSingleFile=true -p:PublishReadyToRun=true /p:Version=${{ steps.environments.outputs.version }} --self-contained true --verbosity diagnostic
-
-    - name: Archive
+    - name: Archive for Windows
+      if: matrix.platform == 'windows-latest'
       run: |
-        zip -j ${{ env.BASE_NAME }}-win-x64.zip ./artifacts/win-x64/${{ env.EXE_NAME }}.exe
-        zip -j ${{ env.BASE_NAME }}-osx-x64.zip ./artifacts/osx-x64/${{ env.EXE_NAME }}
-        zip -j ${{ env.BASE_NAME }}-linux-x64.zip ./artifacts/linux-x64/${{ env.EXE_NAME }}
+        powershell Compress-Archive -Path ./artifacts/${{ env.EXE_NAME }}${{ matrix.extension }} -DestinationPath ${{ env.BASE_NAME }}-${{ matrix.runtime }}.zip
+
+    - name: Archive for macOS or Linux
+      if: matrix.platform != 'windows-latest'
+      run: |
+        zip -j ${{ env.BASE_NAME }}-${{ matrix.runtime }}.zip ./artifacts/${{ env.EXE_NAME }}${{ matrix.extension }}
 
     - name: Release
       uses: softprops/action-gh-release@v1
       with:
-        name: Ver.${{ steps.environments.outputs.version }}
-        tag_name: v${{ steps.environments.outputs.version }}
+        name: Ver.${{ needs.initialize.outputs.version }}
+        tag_name: v${{ needs.initialize.outputs.version }}
         files: |
-          ${{ env.BASE_NAME }}-win-x64.zip
-          ${{ env.BASE_NAME }}-osx-x64.zip
-          ${{ env.BASE_NAME }}-linux-x64.zip
+          ${{ env.BASE_NAME }}-${{ matrix.runtime }}.zip

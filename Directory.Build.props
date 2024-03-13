@@ -1,6 +1,6 @@
 ﻿<Project>
   <PropertyGroup>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>12</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

@@ -1,15 +1,16 @@
 ﻿using System.Buffers;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
+#if NET7_0_OR_GREATER
 using System.Runtime.InteropServices;
+#endif
 using System.Security.Cryptography;
 using System.Text;
-using NStash.Commands;
-using NStash.Events;
+using NStash.Core.Events;
 
-namespace NStash.Services.Implementations;
+namespace NStash.Core;
 
-public sealed class EncryptionService : IEncryptionService
+public static class Encryptor
 {
     private const string EncryptedExtension = ".nstash";
 
@@ -33,9 +34,9 @@ public sealed class EncryptionService : IEncryptionService
 
     private static readonly byte[] CompressedPrefix = new byte[NStashPrefixSize];
 
-    private static readonly Encoding DefaultEncoding = Encoding.UTF8;
+    private static readonly Encoding DefaultEncoding = new UTF8Encoding(false);
 
-    public EncryptionService()
+    static Encryptor()
     {
         var encryptedPrefix = "NStashEncryptedFile"u8.ToArray();
         var compressedPrefix = "NStashCompressedFile"u8.ToArray();
@@ -44,28 +45,34 @@ public sealed class EncryptionService : IEncryptionService
         Array.Copy(compressedPrefix, CompressedPrefix, compressedPrefix.Length);
     }
 
-    public bool AfterDelete { get; set; }
-
-    public bool Compress { get; set; }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async IAsyncEnumerable<ValueTask> EncryptAsync(
+    public static async IAsyncEnumerable<ValueTask> EncryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
-        IProgress<FileEncryptionEventArgs> progress,
+        bool compress = false,
+        bool afterDelete = false,
+        IProgress<FileEncryptionEventArgs>? progress = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (fileSystemOptions.IsFile)
         {
-            yield return this.EncryptFileAsync(fileSystemOptions.Path, password, dryRun, progress, cancellationToken);
+            yield return EncryptFileAsync(
+                fileSystemOptions.Path,
+                password,
+                dryRun,
+                compress,
+                afterDelete,
+                progress,
+                cancellationToken);
         }
         else
         {
-            await foreach (var task in this.EncryptDirectoryAsync(
+            await foreach (var task in EncryptDirectoryAsync(
                                fileSystemOptions.Path,
                                password,
                                dryRun,
+                               compress,
+                               afterDelete,
                                progress,
                                cancellationToken).ConfigureAwait(false))
             {
@@ -74,24 +81,31 @@ public sealed class EncryptionService : IEncryptionService
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async IAsyncEnumerable<ValueTask> DecryptAsync(
+    public static async IAsyncEnumerable<ValueTask> DecryptAsync(
         FileSystemOptions fileSystemOptions,
         string password,
         bool dryRun,
-        IProgress<FileEncryptionEventArgs> progress,
+        bool afterDelete = false,
+        IProgress<FileEncryptionEventArgs>? progress = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (fileSystemOptions.IsFile)
         {
-            yield return this.DecryptFileAsync(fileSystemOptions.Path, password, dryRun, progress, cancellationToken);
+            yield return DecryptFileAsync(
+                fileSystemOptions.Path,
+                password,
+                dryRun,
+                afterDelete,
+                progress,
+                cancellationToken);
         }
         else
         {
-            await foreach (var task in this.DecryptDirectoryAsync(
+            await foreach (var task in DecryptDirectoryAsync(
                                fileSystemOptions.Path,
                                password,
                                dryRun,
+                               afterDelete,
                                progress,
                                cancellationToken).ConfigureAwait(false))
             {
@@ -172,41 +186,46 @@ public sealed class EncryptionService : IEncryptionService
         return result;
     }
 
-    private async IAsyncEnumerable<ValueTask> EncryptDirectoryAsync(
+    private static async IAsyncEnumerable<ValueTask> EncryptDirectoryAsync(
         string path,
         string password,
         bool dryRun,
-        IProgress<FileEncryptionEventArgs> progress,
+        bool compress,
+        bool afterDelete,
+        IProgress<FileEncryptionEventArgs>? progress,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            yield return this.EncryptFileAsync(file, password, dryRun, progress, cancellationToken);
+            yield return EncryptFileAsync(file, password, dryRun, compress, afterDelete, progress, cancellationToken);
         }
 
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 
-    private async IAsyncEnumerable<ValueTask> DecryptDirectoryAsync(
+    private static async IAsyncEnumerable<ValueTask> DecryptDirectoryAsync(
         string path,
         string password,
         bool dryRun,
-        IProgress<FileEncryptionEventArgs> progress,
+        bool afterDelete,
+        IProgress<FileEncryptionEventArgs>? progress,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            yield return this.DecryptFileAsync(file, password, dryRun, progress, cancellationToken);
+            yield return DecryptFileAsync(file, password, dryRun, afterDelete, progress, cancellationToken);
         }
 
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 
-    private async ValueTask EncryptFileAsync(
+    private static async ValueTask EncryptFileAsync(
         string path,
         string password,
         bool dryRun,
-        IProgress<FileEncryptionEventArgs> progress,
+        bool compress,
+        bool afterDelete,
+        IProgress<FileEncryptionEventArgs>? progress,
         CancellationToken cancellationToken)
     {
         var sourceFileStream = new FileStream(
@@ -238,17 +257,17 @@ public sealed class EncryptionService : IEncryptionService
 
                 await using (destinationFileStream.ConfigureAwait(false))
                 {
-                    var encryptInfo = this.GenerateEncryptInfo(password);
+                    var (salt, key, iv) = GenerateEncryptInfo(password);
                     using var aes = Aes.Create();
 
                     aes.Mode = CipherMode.CBC;
                     aes.Padding = PaddingMode.PKCS7;
                     aes.KeySize = DefaultKeySize;
                     aes.BlockSize = DefaultBlockSize;
-                    aes.Key = encryptInfo.Item2;
-                    aes.IV = encryptInfo.Item3;
+                    aes.Key = key;
+                    aes.IV = iv;
 
-                    if (this.Compress)
+                    if (compress)
                     {
                         await destinationFileStream.WriteAsync(
                             CompressedPrefix,
@@ -261,7 +280,7 @@ public sealed class EncryptionService : IEncryptionService
                             cancellationToken).ConfigureAwait(false);
                     }
 
-                    await destinationFileStream.WriteAsync(encryptInfo.Item1, cancellationToken).ConfigureAwait(false);
+                    await destinationFileStream.WriteAsync(salt, cancellationToken).ConfigureAwait(false);
                     await destinationFileStream.WriteAsync(aes.IV, cancellationToken).ConfigureAwait(false);
 
                     var fileInfo = new FileInfo(path);
@@ -270,7 +289,9 @@ public sealed class EncryptionService : IEncryptionService
                     var lastWriteTime = fileInfo.LastWriteTimeUtc.Ticks;
                     var lastAccessTime = fileInfo.LastAccessTimeUtc.Ticks;
                     var attributes = (int)fileInfo.Attributes;
+#if NET7_0_OR_GREATER
                     var unixFileMode = (int)fileInfo.UnixFileMode;
+#endif
                     var fileName = fileInfo.Name;
                     var fileNameBytes = DefaultEncoding.GetBytes(fileName);
                     var fileNameBytesLength = fileNameBytes.Length;
@@ -309,11 +330,19 @@ public sealed class EncryptionService : IEncryptionService
                                 fileInfoBuffer,
                                 attributes,
                                 cancellationToken).ConfigureAwait(false);
+#if NET7_0_OR_GREATER
                             await WriteIntBytesAsync(
                                 cryptoStream,
                                 fileInfoBuffer,
                                 unixFileMode,
                                 cancellationToken).ConfigureAwait(false);
+#else
+                            await WriteIntBytesAsync(
+                                cryptoStream,
+                                fileInfoBuffer,
+                                0,
+                                cancellationToken).ConfigureAwait(false);
+#endif
                             await WriteIntBytesAsync(
                                 cryptoStream,
                                 fileInfoBuffer,
@@ -324,13 +353,14 @@ public sealed class EncryptionService : IEncryptionService
                                 cancellationToken).ConfigureAwait(false);
                         }
 
-                        using var destinationMemoryOwner = MemoryPool<byte>.Shared.Rent(DefaultBufferSize);
-                        var buffer = destinationMemoryOwner.Memory;
                         var totalLength = (double)sourceFileStream.Length;
                         var currentLength = 0D;
-                        var length = await sourceFileStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                        using var destinationMemoryOwner = MemoryPool<byte>.Shared.Rent(DefaultBufferSize);
+                        var buffer = destinationMemoryOwner.Memory;
+                        var length = await sourceFileStream.ReadAsync(buffer, cancellationToken)
+                            .ConfigureAwait(false);
 
-                        if (this.Compress)
+                        if (compress)
                         {
                             var deflateStream = new DeflateStream(cryptoStream, DefaultCompressionLevel);
 
@@ -386,7 +416,7 @@ public sealed class EncryptionService : IEncryptionService
             }
         }
 
-        if (this.AfterDelete)
+        if (afterDelete)
         {
             if (File.Exists(path))
             {
@@ -402,11 +432,12 @@ public sealed class EncryptionService : IEncryptionService
         }
     }
 
-    private async ValueTask DecryptFileAsync(
+    private static async ValueTask DecryptFileAsync(
         string path,
         string password,
         bool dryRun,
-        IProgress<FileEncryptionEventArgs> progress,
+        bool afterDelete,
+        IProgress<FileEncryptionEventArgs>? progress,
         CancellationToken cancellationToken)
     {
         var sourceFileStream = new FileStream(
@@ -459,14 +490,16 @@ public sealed class EncryptionService : IEncryptionService
                 long lastWriteTime;
                 long lastAccessTime;
                 FileAttributes attributes;
+#if NET7_0_OR_GREATER
                 UnixFileMode unixFileMode;
+#endif
                 using var aes = Aes.Create();
 
                 aes.Mode = CipherMode.CBC;
                 aes.Padding = PaddingMode.PKCS7;
                 aes.KeySize = DefaultKeySize;
                 aes.BlockSize = DefaultBlockSize;
-                aes.Key = this.GenerateKey(password, salt);
+                aes.Key = GenerateKey(password.AsSpan(), salt);
                 aes.IV = iv;
 
                 using var cryptoTransform = aes.CreateDecryptor(aes.Key, aes.IV);
@@ -491,8 +524,13 @@ public sealed class EncryptionService : IEncryptionService
                             .ConfigureAwait(false);
                         attributes = (FileAttributes)await ReadIntBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
                             .ConfigureAwait(false);
+#if NET7_0_OR_GREATER
                         unixFileMode = (UnixFileMode)await ReadIntBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
                             .ConfigureAwait(false);
+#else
+                        _ = await ReadIntBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
+                            .ConfigureAwait(false);
+#endif
                         fileNameBytesLength = await ReadIntBytesAsync(cryptoStream, fileInfoBuffer, cancellationToken)
                             .ConfigureAwait(false);
                     }
@@ -507,8 +545,8 @@ public sealed class EncryptionService : IEncryptionService
                         while (true)
                         {
                             offset += await cryptoStream.ReadAsync(
-                                    fileNameBuffer[offset..fileNameBytesLength],
-                                    cancellationToken).ConfigureAwait(false);
+                                fileNameBuffer[offset..fileNameBytesLength],
+                                cancellationToken).ConfigureAwait(false);
 
                             if (offset >= fileNameBytesLength)
                             {
@@ -589,13 +627,18 @@ public sealed class EncryptionService : IEncryptionService
                     }
                 }
 
+#if NET7_0_OR_GREATER
                 var fileInfo = new FileInfo(destinationFilePath)
+#else
+                _ = new FileInfo(destinationFilePath)
+#endif
                 {
                     CreationTimeUtc = new DateTime(creationTime, DateTimeKind.Utc),
                     LastWriteTimeUtc = new DateTime(lastWriteTime, DateTimeKind.Utc),
                     LastAccessTimeUtc = new DateTime(lastAccessTime, DateTimeKind.Utc),
                     Attributes = attributes,
                 };
+#if NET7_0_OR_GREATER
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) is false)
                 {
@@ -603,6 +646,7 @@ public sealed class EncryptionService : IEncryptionService
                     fileInfo.UnixFileMode = unixFileMode;
 #pragma warning restore CA1416
                 }
+#endif
             }
             catch (Exception)
             {
@@ -616,7 +660,7 @@ public sealed class EncryptionService : IEncryptionService
             }
         }
 
-        if (this.AfterDelete)
+        if (afterDelete)
         {
             if (File.Exists(path))
             {
@@ -633,7 +677,7 @@ public sealed class EncryptionService : IEncryptionService
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private (byte[], byte[], byte[]) GenerateEncryptInfo(string password)
+    private static (byte[], byte[], byte[]) GenerateEncryptInfo(string password)
     {
         using var derivedBytes = new Rfc2898DeriveBytes(password, DefaultSaltSize, DefaultIterations, DefaultHashAlgorithm);
 
@@ -644,7 +688,7 @@ public sealed class EncryptionService : IEncryptionService
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private byte[] GenerateKey(ReadOnlySpan<char> password, ReadOnlySpan<byte> salt)
+    private static byte[] GenerateKey(ReadOnlySpan<char> password, ReadOnlySpan<byte> salt)
     {
         return Rfc2898DeriveBytes.Pbkdf2(
             password,
